@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Trophy, Users, Plus } from "lucide-react";
+import { Trophy, Users, Plus, Upload } from "lucide-react";
 
 function App() {
   const [players, setPlayers] = useState([]);
   const [tournaments, setTournaments] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [activeTab, setActiveTab] = useState("rankings");
   const [name, setName] = useState("");
@@ -32,6 +33,21 @@ function App() {
     setName("");
     setRating(500);
     setShowAdd(false);
+  };
+
+  const importPlayers = (playerList, defaultRating) => {
+    const newPlayers = playerList.map((playerName, index) => ({
+      id: Date.now() + index,
+      name: playerName.trim(),
+      rating: Number(defaultRating),
+      wins: 0,
+      losses: 0,
+    }));
+    
+    const updated = [...players, ...newPlayers];
+    setPlayers(updated);
+    localStorage.setItem("players", JSON.stringify(updated));
+    setShowImport(false);
   };
 
   const createTournament = (tournamentName, gameType, format, maxPlayers) => {
@@ -365,28 +381,48 @@ function App() {
                 display: "flex",
                 justifyContent: "space-between",
                 marginBottom: "20px",
+                gap: "10px",
               }}
             >
               <h2 style={{ fontSize: "24px", fontWeight: "bold" }}>
                 Player Rankings
               </h2>
-              <button
-                onClick={() => setShowAdd(true)}
-                style={{
-                  background: "#10b981",
-                  padding: "10px 20px",
-                  borderRadius: "8px",
-                  border: "none",
-                  color: "white",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "5px",
-                }}
-              >
-                <Plus size={20} />
-                Add Player
-              </button>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  onClick={() => setShowImport(true)}
+                  style={{
+                    background: "#3b82f6",
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    color: "white",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <Upload size={20} />
+                  Import Players
+                </button>
+                <button
+                  onClick={() => setShowAdd(true)}
+                  style={{
+                    background: "#10b981",
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    color: "white",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <Plus size={20} />
+                  Add Player
+                </button>
+              </div>
             </div>
 
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -446,7 +482,7 @@ function App() {
                   color: "#9ca3af",
                 }}
               >
-                No players yet. Click "Add Player" to get started!
+                No players yet. Click "Add Player" or "Import Players" to get started!
               </div>
             )}
           </div>
@@ -1376,6 +1412,13 @@ function App() {
           </div>
         )}
 
+        {showImport && (
+          <PlayerImportModal
+            onImport={importPlayers}
+            onCancel={() => setShowImport(false)}
+          />
+        )}
+
         {showCreateTournament && (
           <div
             style={{
@@ -1415,6 +1458,293 @@ function App() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function PlayerImportModal({ onImport, onCancel }) {
+  const [importMethod, setImportMethod] = useState("paste");
+  const [textInput, setTextInput] = useState("");
+  const [defaultRating, setDefaultRating] = useState(500);
+  const [previewPlayers, setPreviewPlayers] = useState([]);
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const lines = text.split(/\r?\n/).filter((line) => line.trim());
+      setPreviewPlayers(lines);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleTextChange = (text) => {
+    setTextInput(text);
+    const lines = text.split(/\r?\n/).filter((line) => line.trim());
+    setPreviewPlayers(lines);
+  };
+
+  const handleImport = () => {
+    if (previewPlayers.length > 0) {
+      onImport(previewPlayers, defaultRating);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0,0,0,0.8)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          background: "#1f2937",
+          borderRadius: "10px",
+          padding: "30px",
+          width: "500px",
+          maxHeight: "80vh",
+          overflow: "auto",
+        }}
+      >
+        <h3
+          style={{
+            fontSize: "20px",
+            fontWeight: "bold",
+            marginBottom: "20px",
+          }}
+        >
+          Import Players
+        </h3>
+
+        <div style={{ marginBottom: "20px" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: "10px",
+              marginBottom: "15px",
+              background: "#374151",
+              borderRadius: "8px",
+              padding: "5px",
+            }}
+          >
+            <button
+              onClick={() => setImportMethod("paste")}
+              style={{
+                flex: 1,
+                padding: "10px",
+                borderRadius: "5px",
+                border: "none",
+                background: importMethod === "paste" ? "#10b981" : "transparent",
+                color: "white",
+                cursor: "pointer",
+              }}
+            >
+              Paste Names
+            </button>
+            <button
+              onClick={() => setImportMethod("file")}
+              style={{
+                flex: 1,
+                padding: "10px",
+                borderRadius: "5px",
+                border: "none",
+                background: importMethod === "file" ? "#10b981" : "transparent",
+                color: "white",
+                cursor: "pointer",
+              }}
+            >
+              Upload File
+            </button>
+          </div>
+
+          {importMethod === "paste" && (
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "5px",
+                  fontSize: "14px",
+                }}
+              >
+                Player Names (one per line)
+              </label>
+              <textarea
+                value={textInput}
+                onChange={(e) => handleTextChange(e.target.value)}
+                placeholder="John Smith&#10;Jane Doe&#10;Mike Johnson&#10;Sarah Williams"
+                style={{
+                  width: "100%",
+                  background: "#374151",
+                  border: "none",
+                  borderRadius: "5px",
+                  padding: "10px",
+                  color: "white",
+                  fontSize: "14px",
+                  minHeight: "150px",
+                  resize: "vertical",
+                }}
+              />
+            </div>
+          )}
+
+          {importMethod === "file" && (
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "10px",
+                  fontSize: "14px",
+                }}
+              >
+                Upload CSV or TXT file
+              </label>
+              <input
+                type="file"
+                accept=".csv,.txt"
+                onChange={handleFileUpload}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  background: "#374151",
+                  border: "none",
+                  borderRadius: "5px",
+                  color: "white",
+                  cursor: "pointer",
+                }}
+              />
+              <p
+                style={{
+                  fontSize: "12px",
+                  color: "#9ca3af",
+                  marginTop: "5px",
+                }}
+              >
+                File should contain one player name per line
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: "20px" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: "5px",
+              fontSize: "14px",
+            }}
+          >
+            Default Rating for All Players
+          </label>
+          <input
+            type="number"
+            value={defaultRating}
+            onChange={(e) => setDefaultRating(e.target.value)}
+            style={{
+              width: "100%",
+              background: "#374151",
+              border: "none",
+              borderRadius: "5px",
+              padding: "10px",
+              color: "white",
+              fontSize: "16px",
+            }}
+          />
+          <p
+            style={{
+              fontSize: "12px",
+              color: "#9ca3af",
+              marginTop: "5px",
+            }}
+          >
+            400=C Player, 500=B Player, 600=A Player, 700+=Pro
+          </p>
+        </div>
+
+        {previewPlayers.length > 0 && (
+          <div style={{ marginBottom: "20px" }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "10px",
+                fontSize: "14px",
+                fontWeight: "bold",
+              }}
+            >
+              Preview ({previewPlayers.length} players)
+            </label>
+            <div
+              style={{
+                background: "#374151",
+                borderRadius: "5px",
+                padding: "10px",
+                maxHeight: "150px",
+                overflow: "auto",
+              }}
+            >
+              {previewPlayers.map((name, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: "5px 0",
+                    borderBottom:
+                      idx < previewPlayers.length - 1
+                        ? "1px solid #4b5563"
+                        : "none",
+                    fontSize: "14px",
+                  }}
+                >
+                  {name}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            onClick={handleImport}
+            disabled={previewPlayers.length === 0}
+            style={{
+              flex: 1,
+              background: previewPlayers.length > 0 ? "#10b981" : "#4b5563",
+              padding: "10px",
+              borderRadius: "5px",
+              border: "none",
+              color: "white",
+              cursor: previewPlayers.length > 0 ? "pointer" : "not-allowed",
+              fontWeight: "bold",
+            }}
+          >
+            Import {previewPlayers.length} Players
+          </button>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              background: "#4b5563",
+              padding: "10px",
+              borderRadius: "5px",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );
