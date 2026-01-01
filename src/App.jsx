@@ -362,7 +362,7 @@ function App() {
               .map((m) => m.loser_id)
               .filter(l => l !== null);
 
-            // Create next winners bracket matches
+            // Create next winners bracket matches if more than one winner
             if (winners.length > 1) {
               const nextRound = currentMatch.round + 1;
               for (let i = 0; i < winners.length; i += 2) {
@@ -380,8 +380,9 @@ function App() {
               }
             }
 
-            // Create losers bracket matches
+            // Handle losers bracket
             if (currentMatch.round === 1) {
+              // Round 1: Just put losers into losers bracket
               for (let i = 0; i < losers.length; i += 2) {
                 if (losers[i + 1]) {
                   newMatches.push({
@@ -396,23 +397,61 @@ function App() {
                 }
               }
             } else {
-              for (let i = 0; i < losers.length; i += 2) {
-                if (losers[i + 1]) {
-                  newMatches.push({
-                    tournament_id: tournamentId,
-                    player1_id: losers[i],
-                    player2_id: losers[i + 1],
-                    winner_id: null,
-                    loser_id: null,
-                    round: (currentMatch.round - 1) * 2,
-                    bracket_type: "losers",
-                  });
+              // Round 2+: Need to merge with winners from previous losers round
+              // Calculate which losers round should feed into the next one
+              const targetLosersRound = (currentMatch.round - 1) * 2;
+              
+              // Get the losers bracket round that should be complete
+              const losersBracketRound = updatedBracket.filter(
+                (m) => m.bracket_type === "losers" && m.round === targetLosersRound
+              );
+              
+              // Check if that losers round is complete
+              const losersRoundComplete = losersBracketRound.length > 0 && 
+                losersBracketRound.every((m) => m.winner_id !== null || m.player2_id === null);
+              
+              if (losersRoundComplete) {
+                // Get winners from that losers round
+                const losersBracketWinners = losersBracketRound.map((m) => {
+                  if (m.player2_id === null) return m.player1_id;
+                  return m.winner_id;
+                }).filter(w => w !== null);
+                
+                // Interleave: losers from winners bracket with winners from losers bracket
+                const combined = [];
+                const maxLength = Math.max(losers.length, losersBracketWinners.length);
+                
+                for (let i = 0; i < maxLength; i++) {
+                  if (i < losers.length) combined.push(losers[i]);
+                  if (i < losersBracketWinners.length) combined.push(losersBracketWinners[i]);
+                }
+                
+                // Create next losers round matches
+                const nextLosersRound = targetLosersRound + 1;
+                for (let i = 0; i < combined.length; i += 2) {
+                  if (combined[i + 1]) {
+                    newMatches.push({
+                      tournament_id: tournamentId,
+                      player1_id: combined[i],
+                      player2_id: combined[i + 1],
+                      winner_id: null,
+                      loser_id: null,
+                      round: nextLosersRound,
+                      bracket_type: "losers",
+                    });
+                  }
                 }
               }
             }
           } else if (currentMatch.bracket_type === "losers") {
-            const winners = currentRoundMatches.map((m) => m.winner_id);
+            // Get winners from losers bracket (including BYE auto-wins)
+            const winners = currentRoundMatches.map((m) => {
+              if (m.player2_id === null) return m.player1_id;
+              return m.winner_id;
+            }).filter(w => w !== null);
+            
             if (winners.length > 1) {
+              // Continue losers bracket
               const nextRound = currentMatch.round + 1;
               for (let i = 0; i < winners.length; i += 2) {
                 if (winners[i + 1]) {
@@ -428,11 +467,15 @@ function App() {
                 }
               }
             } else if (winners.length === 1) {
-              const winnersMatches = updatedBracket.filter(
-                (m) => m.bracket_type === "winners"
+              // Losers bracket complete - create grand finals
+              // Get the winner from winners bracket
+              const winnersBracketMatches = updatedBracket.filter(
+                (m) => m.bracket_type === "winners" && m.winner_id !== null
               );
-              const winnersChamp =
-                winnersMatches[winnersMatches.length - 1]?.winner_id;
+              
+              // Sort by round descending to get the latest winner
+              winnersBracketMatches.sort((a, b) => b.round - a.round);
+              const winnersChamp = winnersBracketMatches[0]?.winner_id;
 
               if (winnersChamp) {
                 newMatches.push({
@@ -447,17 +490,20 @@ function App() {
               }
             }
           } else if (currentMatch.bracket_type === "grand-final") {
-            const winnersChamp = updatedBracket.filter(
-              (m) => m.bracket_type === "winners"
-            )[
-              updatedBracket.filter((m) => m.bracket_type === "winners").length - 1
-            ]?.winner_id;
+            // Grand finals bracket reset logic
+            const winnersBracketMatches = updatedBracket.filter(
+              (m) => m.bracket_type === "winners" && m.winner_id !== null
+            );
+            winnersBracketMatches.sort((a, b) => b.round - a.round);
+            const winnersChamp = winnersBracketMatches[0]?.winner_id;
             
+            // If losers bracket winner wins, need bracket reset
             if (winnerId !== winnersChamp) {
               const existingGrandFinals = updatedBracket.filter(
                 (m) => m.bracket_type === "grand-final"
               );
               if (existingGrandFinals.length === 1) {
+                // Create bracket reset match
                 newMatches.push({
                   tournament_id: tournamentId,
                   player1_id: currentMatch.player1_id,
