@@ -277,19 +277,35 @@ function App() {
       
       if (updateError) throw updateError;
 
-      let updatedBracket = tournament.bracket.map((m) =>
-        m.id === matchId ? { ...m, winner_id: winnerId, loser_id: loserId } : m
-      );
+      // Reload the bracket from database to get fresh data
+      const { data: freshBracket, error: bracketError } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('tournament_id', tournamentId);
+      
+      if (bracketError) throw bracketError;
+
+      let updatedBracket = freshBracket;
 
       // Single Elimination logic
       if (tournament.format === "Single Elimination") {
         const currentRound = updatedBracket.filter(
           (m) => m.round === currentMatch.round
         );
-        const allComplete = currentRound.every((m) => m.winner_id !== null);
+        // Check if all matches with BOTH players are complete (ignore BYE matches)
+        const allComplete = currentRound.every((m) => 
+          m.winner_id !== null || m.player2_id === null
+        );
 
         if (allComplete) {
-          const winners = currentRound.map((m) => m.winner_id);
+          // Get winners from each match (including BYE auto-wins)
+          const winners = currentRound.map((m) => {
+            // If there's a BYE (no player2), player1 automatically wins
+            if (m.player2_id === null) return m.player1_id;
+            // Otherwise return the recorded winner
+            return m.winner_id;
+          }).filter(w => w !== null);
+          
           if (winners.length > 1) {
             const nextRound = currentMatch.round + 1;
             const newMatches = [];
@@ -326,14 +342,25 @@ function App() {
             m.round === currentMatch.round &&
             m.bracket_type === currentMatch.bracket_type
         );
-        const allComplete = currentRoundMatches.every((m) => m.winner_id !== null);
+        const allComplete = currentRoundMatches.every((m) => 
+          m.winner_id !== null || m.player2_id === null
+        );
 
         if (allComplete) {
           const newMatches = [];
           
           if (currentMatch.bracket_type === "winners") {
-            const winners = currentRoundMatches.map((m) => m.winner_id);
-            const losers = currentRoundMatches.map((m) => m.loser_id);
+            // Get winners (including BYE auto-wins)
+            const winners = currentRoundMatches.map((m) => {
+              if (m.player2_id === null) return m.player1_id;
+              return m.winner_id;
+            }).filter(w => w !== null);
+            
+            // Get losers (only from actual matches, not BYEs)
+            const losers = currentRoundMatches
+              .filter(m => m.player2_id !== null)
+              .map((m) => m.loser_id)
+              .filter(l => l !== null);
 
             // Create next winners bracket matches
             if (winners.length > 1) {
@@ -1347,6 +1374,10 @@ function TournamentBracket({ tournament, players, onRecordWinner }) {
     const p1 = players.find((p) => p.id === match.player1_id);
     const p2 = players.find((p) => p.id === match.player2_id);
     
+    // Auto-win for BYE matches
+    const isAutoWin = !match.player2_id;
+    const displayWinner = isAutoWin ? match.player1_id : match.winner_id;
+    
     return (
       <div
         key={match.id}
@@ -1368,12 +1399,13 @@ function TournamentBracket({ tournament, players, onRecordWinner }) {
           <div>
             <div
               style={{
-                fontWeight: match.winner_id === match.player1_id ? "bold" : "normal",
-                color: match.winner_id === match.player1_id ? "#10b981" : "white",
+                fontWeight: displayWinner === match.player1_id ? "bold" : "normal",
+                color: displayWinner === match.player1_id ? "#10b981" : "white",
               }}
             >
               {p1?.name || "BYE"}{" "}
-              {match.winner_id === match.player1_id && "✓"}
+              {displayWinner === match.player1_id && "✓"}
+              {isAutoWin && " (Auto-Win)"}
             </div>
             <div
               style={{
@@ -1386,12 +1418,12 @@ function TournamentBracket({ tournament, players, onRecordWinner }) {
             </div>
             <div
               style={{
-                fontWeight: match.winner_id === match.player2_id ? "bold" : "normal",
-                color: match.winner_id === match.player2_id ? "#10b981" : "white",
+                fontWeight: displayWinner === match.player2_id ? "bold" : "normal",
+                color: displayWinner === match.player2_id ? "#10b981" : "white",
               }}
             >
               {p2?.name || "BYE"}{" "}
-              {match.winner_id === match.player2_id && "✓"}
+              {displayWinner === match.player2_id && "✓"}
             </div>
           </div>
           {!match.winner_id && match.player1_id && match.player2_id && (
@@ -1703,4 +1735,3 @@ function TournamentForm({ onCreate, onCancel }) {
 }
 
 export default App;
- App;
