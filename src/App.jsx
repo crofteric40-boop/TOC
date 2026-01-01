@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Trophy, Users, Plus, Upload } from "lucide-react";
 import { supabase } from "./supabaseClient";
-Upload `ChallengeBoard.jsx` to `src/` folder
-Upload `challengeFunctions.js` to `src/` folder
+import ChallengeBoard from './ChallengeBoard';
+import * as challengeFuncs from './challengeFunctions';
 
 function App() {
   const [players, setPlayers] = useState([]);
