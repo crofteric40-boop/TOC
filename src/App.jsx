@@ -1338,18 +1338,248 @@ function PlayerImportModal({ onImport, onCancel }) {
   );
 }
 
-// Tournament bracket display component (extracted due to length)
+// Tournament bracket display component
 function TournamentBracket({ tournament, players, onRecordWinner }) {
   const t = tournament;
+  
+  // Helper function to render a single match
+  const renderMatch = (match, borderColor = "#10b981") => {
+    const p1 = players.find((p) => p.id === match.player1_id);
+    const p2 = players.find((p) => p.id === match.player2_id);
+    
+    return (
+      <div
+        key={match.id}
+        style={{
+          background: "#374151",
+          padding: "15px",
+          borderRadius: "5px",
+          marginBottom: "10px",
+          borderLeft: `4px solid ${borderColor}`,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontWeight: match.winner_id === match.player1_id ? "bold" : "normal",
+                color: match.winner_id === match.player1_id ? "#10b981" : "white",
+              }}
+            >
+              {p1?.name || "BYE"}{" "}
+              {match.winner_id === match.player1_id && "✓"}
+            </div>
+            <div
+              style={{
+                fontSize: "12px",
+                color: "#9ca3af",
+                margin: "5px 0",
+              }}
+            >
+              vs
+            </div>
+            <div
+              style={{
+                fontWeight: match.winner_id === match.player2_id ? "bold" : "normal",
+                color: match.winner_id === match.player2_id ? "#10b981" : "white",
+              }}
+            >
+              {p2?.name || "BYE"}{" "}
+              {match.winner_id === match.player2_id && "✓"}
+            </div>
+          </div>
+          {!match.winner_id && match.player1_id && match.player2_id && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "5px",
+              }}
+            >
+              <button
+                onClick={() => onRecordWinner(t.id, match.id, match.player1_id)}
+                style={{
+                  background: "#10b981",
+                  padding: "5px 15px",
+                  borderRadius: "5px",
+                  border: "none",
+                  color: "white",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                }}
+              >
+                {p1?.name} Wins
+              </button>
+              <button
+                onClick={() => onRecordWinner(t.id, match.id, match.player2_id)}
+                style={{
+                  background: "#10b981",
+                  padding: "5px 15px",
+                  borderRadius: "5px",
+                  border: "none",
+                  color: "white",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                }}
+              >
+                {p2?.name} Wins
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
   
   if (t.format === "Double Elimination") {
     return (
       <div>
-        {/* Winners Bracket - code continues... (same as before) */}
         <h4 style={{ fontWeight: "bold", marginBottom: "15px", color: "#fbbf24" }}>
           Winners Bracket
         </h4>
-        {/* Rest of double elimination bracket rendering */}
+        {[...new Set(t.bracket.filter((m) => m.bracket_type === "winners").map((m) => m.round))].map((round) => (
+          <div key={round} style={{ marginBottom: "20px" }}>
+            <h5 style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "10px" }}>
+              Winners Round {round}
+            </h5>
+            {t.bracket
+              .filter((m) => m.round === round && m.bracket_type === "winners")
+              .map((match) => renderMatch(match, "#fbbf24"))}
+          </div>
+        ))}
+
+        {t.bracket.some((m) => m.bracket_type === "losers") && (
+          <>
+            <h4
+              style={{
+                fontWeight: "bold",
+                marginBottom: "15px",
+                color: "#ef4444",
+                marginTop: "30px",
+              }}
+            >
+              Losers Bracket
+            </h4>
+            {[...new Set(t.bracket.filter((m) => m.bracket_type === "losers").map((m) => m.round))].map((round) => (
+              <div key={round} style={{ marginBottom: "20px" }}>
+                <h5 style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "10px" }}>
+                  Losers Round {round}
+                </h5>
+                {t.bracket
+                  .filter((m) => m.round === round && m.bracket_type === "losers")
+                  .map((match) => renderMatch(match, "#ef4444"))}
+              </div>
+            ))}
+          </>
+        )}
+
+        {t.bracket.some((m) => m.bracket_type === "grand-final") && (
+          <>
+            <h4
+              style={{
+                fontWeight: "bold",
+                marginBottom: "15px",
+                color: "#a855f7",
+                marginTop: "30px",
+              }}
+            >
+              Grand Finals
+            </h4>
+            {t.bracket
+              .filter((m) => m.bracket_type === "grand-final")
+              .map((match, idx) => {
+                const p1 = players.find((p) => p.id === match.player1_id);
+                const p2 = players.find((p) => p.id === match.player2_id);
+                return (
+                  <div key={match.id} style={{ marginBottom: "10px" }}>
+                    {idx > 0 && (
+                      <p style={{ fontSize: "12px", color: "#9ca3af", marginBottom: "10px" }}>
+                        (Bracket Reset - Losers bracket winner won first grand final)
+                      </p>
+                    )}
+                    <div
+                      style={{
+                        background: "#374151",
+                        padding: "15px",
+                        borderRadius: "5px",
+                        borderLeft: "4px solid #a855f7",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: match.winner_id === match.player1_id ? "bold" : "normal",
+                              color: match.winner_id === match.player1_id ? "#10b981" : "white",
+                            }}
+                          >
+                            {p1?.name}{" "}
+                            {match.winner_id === match.player1_id && "✓ CHAMPION"}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#9ca3af", margin: "5px 0" }}>
+                            vs
+                          </div>
+                          <div
+                            style={{
+                              fontWeight: match.winner_id === match.player2_id ? "bold" : "normal",
+                              color: match.winner_id === match.player2_id ? "#10b981" : "white",
+                            }}
+                          >
+                            {p2?.name}{" "}
+                            {match.winner_id === match.player2_id && "✓ CHAMPION"}
+                          </div>
+                        </div>
+                        {!match.winner_id && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                            <button
+                              onClick={() => onRecordWinner(t.id, match.id, match.player1_id)}
+                              style={{
+                                background: "#10b981",
+                                padding: "5px 15px",
+                                borderRadius: "5px",
+                                border: "none",
+                                color: "white",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                              }}
+                            >
+                              {p1?.name} Wins
+                            </button>
+                            <button
+                              onClick={() => onRecordWinner(t.id, match.id, match.player2_id)}
+                              style={{
+                                background: "#10b981",
+                                padding: "5px 15px",
+                                borderRadius: "5px",
+                                border: "none",
+                                color: "white",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                              }}
+                            >
+                              {p2?.name} Wins
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </>
+        )}
       </div>
     );
   }
@@ -1358,7 +1588,17 @@ function TournamentBracket({ tournament, players, onRecordWinner }) {
   return (
     <div>
       <h4 style={{ fontWeight: "bold", marginBottom: "10px" }}>Bracket</h4>
-      {/* Rest of single elimination bracket rendering */}
+      {[...new Set(t.bracket.map((m) => m.round))].map((round) => (
+        <div key={round} style={{ marginBottom: "20px" }}>
+          <h5 style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "10px" }}>
+            {round === Math.max(...t.bracket.map((m) => m.round)) &&
+            t.bracket.filter((m) => m.round === round).length === 1
+              ? "Finals"
+              : `Round ${round}`}
+          </h5>
+          {t.bracket.filter((m) => m.round === round).map((match) => renderMatch(match))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1463,3 +1703,4 @@ function TournamentForm({ onCreate, onCancel }) {
 }
 
 export default App;
+ App;
