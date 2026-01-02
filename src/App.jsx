@@ -40,7 +40,7 @@ function App() {
   };
   onst recordChallengeMatch = async (winnerId, loserId) => {
     try {
-      const winner = players.find(p => p.id ===winnerId);
+      const winner = players.find(p => p.id === winnerId);
       const loser = players.find(p => p.id === loserId);
       
       if (!winner || !loser) return;
