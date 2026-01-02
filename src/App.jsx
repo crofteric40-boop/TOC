@@ -127,50 +127,7 @@ const getEligibleOpponents = (playerId) => {
   return challengeFuncs.getEligibleOpponents(players, challenges, playerId);
 };
     
-const recordChallengeMatch = async (winnerId, loserId) => {
-  try {
-    const winner = players.find(p => p.id === winnerId);
-    const loser = players.find(p => p.id === loserId);
-    
-    if (!winner || !loser) return;
-
-    const K = 20;
-    const ratingDiff = winner.rating - loser.rating;
-    const expectedWinner = 1 / (1 + Math.pow(10, -ratingDiff / 400));
-    const expectedLoser = 1 - expectedWinner;
-    const actualWinner = 1;
-    const actualLoser = 0;
-    const winnerRatingChange = K * (actualWinner - expectedWinner);
-    const loserRatingChange = K * (actualLoser - expectedLoser);
-    const newWinnerRating = Math.max(200, Math.round(winner.rating + winnerRatingChange));
-    const newLoserRating = Math.max(200, Math.round(loser.rating + loserRatingChange));
-    const winnerNewWins = winner.wins + 1;
-    const loserNewLosses = loser.losses + 1;
-    const winnerCurrentRank = players.findIndex(p => p.id === winnerId);
-    const loserCurrentRank = players.findIndex(p => p.id === loserId);
-    const lowerRankedWon = winnerCurrentRank > loserCurrentRank;
-
-    await supabase.from('players').update({ rating: newWinnerRating, wins: winnerNewWins }).eq('id', winnerId);
-    await supabase.from('players').update({ rating: newLoserRating, losses: loserNewLosses }).eq('id', loserId);
-
-    if (lowerRankedWon) {
-      await loadPlayers();
-    } else {
-      const updated = players.map(p => {
-        if (p.id === winnerId) return { ...p, rating: newWinnerRating, wins: winnerNewWins };
-        if (p.id === loserId) return { ...p, rating: newLoserRating, losses: loserNewLosses };
-        return p;
-      });
-      setPlayers(updated);
-    }
-  } catch (error) {
-    console.error('Error recording challenge match:', error);
-    alert('Error recording challenge match: ' + error.message);
-  }
-};
-    
-    
-  };
+;
   const recordChallengeMatch = async (winnerId, loserId) => {
     try {
       const winner = players.find(p => p.id === winnerId};
