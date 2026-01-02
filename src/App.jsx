@@ -735,6 +735,39 @@ function App() {
           </div>
           <p style={{ color: "#9ca3af" }}>8-Ball • 9-Ball • 10-Ball</p>
         </div>
+        {/* Player Selection */}
+        {players.length > 0 && (
+          <div style={{ 
+            marginBottom: '20px', 
+            background: '#1f2937', 
+            padding: '15px', 
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <label style={{ color: '#9ca3af' }}>Playing as:</label>
+            <select
+              value={currentUserId || ''}
+              onChange={(e) => setCurrentUserId(e.target.value)}
+              style={{
+                background: '#374151',
+                border: 'none',
+                borderRadius: '5px',
+                padding: '8px 12px',
+                color: 'white',
+                fontSize: '14px',
+              }}
+            >
+              <option value="">Select your player...</option>
+              {sorted.map((p, i) => (
+                <option key={p.id} value={p.id}>
+                  #{i + 1} {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 <div
   style={{
     display: "flex",
@@ -952,7 +985,24 @@ function App() {
             )}
           </div>
         )}
-
+{activeTab === "challenges" && (
+          currentUserId ? (
+            <ChallengeBoard
+              players={sorted}
+              challenges={challenges}
+              currentPlayerId={currentUserId}
+              onCreateChallenge={handleCreateChallenge}
+              onAcceptChallenge={handleAcceptChallenge}
+              onDeclineChallenge={handleDeclineChallenge}
+              onRecordResult={handleRecordChallengeResult}
+              getEligibleOpponents={getEligibleOpponents}
+            />
+          ) : (
+            <div style={{ background: '#1f2937', borderRadius: '10px', padding: '60px', textAlign: 'center', color: '#9ca3af' }}>
+              <p style={{ fontSize: '18px', marginBottom: '10px' }}>Please select your player above to access the Challenge Board</p>
+            </div>
+          )
+        )}
         {activeTab === "tournaments" && (
           <div>
             <div
