@@ -14,6 +14,7 @@ function App() {
   const [name, setName] = useState("");
   const [rating, setRating] = useState(500);
   const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   // Load players from Supabase
   useEffect(() => {
@@ -37,6 +38,135 @@ function App() {
       setLoading(false);
     }
   };
+  onst recordChallengeMatch = async (winnerId, loserId) => {
+    try {
+      const winner = players.find(p => p.id === winnerId);
+      const loser = players.find(p => p.id === loserId);
+      
+      if (!winner || !loser) return;
+
+      // Calculate Fargo-style rating changes
+      const K = 20; // K-factor
+      const ratingDiff = winner.rating - loser.rating;
+      
+      // Expected score calculation (logistic function)
+      const expectedWinner = 1 / (1 + Math.pow(10, -ratingDiff / 400));
+      const expectedLoser = 1 - expectedWinner;
+      
+      // Actual scores (winner gets 1, loser gets 0)
+      const actualWinner = 1;
+      const actualLoser = 0;
+      
+      // Rating changes
+      const winnerRatingChange = K * (actualWinner - expectedWinner);
+      const loserRatingChange = K * (actualLoser - expectedLoser);
+      
+      // New ratings (minimum 200)
+      const newWinnerRating = Math.max(200, Math.round(winner.rating + winnerRatingChange));
+      const newLoserRating = Math.max(200, Math.round(loser.rating + loserRatingChange));
+      
+      // Update wins/losses
+      const winnerNewWins = winner.wins + 1;
+      const loserNewLosses = loser.losses + 1;
+
+      // Determine if rankings should swap
+      const winnerCurrentRank = players.findIndex(p => p.id === winnerId);
+      const loserCurrentRank = players.findIndex(p => p.id === loserId);
+      const lowerRankedWon = winnerCurrentRank > loserCurrentRank;
+
+      // Update both players in database
+      await supabase
+        .from('players')
+        .update({ 
+          rating: newWinnerRating,
+          wins: winnerNewWins
+        })
+        .eq('id', winnerId);
+
+      await supabase
+        .from('players')
+        .update({ 
+          rating: newLoserRating,
+          losses: loserNewLosses
+        })
+        .eq('id', loserId);
+
+      // If lower-ranked player won, we need to reorder
+      if (lowerRankedWon) {
+        // Reload players to get fresh data with new ratings
+        await loadPlayers();
+      } else {
+        // Just update local state
+        const updated = players.map(p => {
+          if (p.id === winnerId) return { ...p, rating: newWinnerRating, wins: winnerNewWins };
+          if (p.id === loserId) return { ...p, rating: newLoserRating, losses: loserNewLosses };
+          return p;
+        });
+        setPlayers(updated);
+      }
+
+      setShowRecordChallenge(false);
+      
+    } catch (error) {
+      console.error('Error recording challenge match:', error);
+      alert('Error recording challenge match: ' + error.message);
+    }
+  };
+
+  const handleCreateChallenge = async (challengerId, challengedId, message) => {
+    try {
+      await challengeFuncs.createChallenge(supabase, challenges, challengerId, challengedId, message);
+      await loadChallenges();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleAcceptChallenge = async (challengeId) => {
+    try {
+      await challengeFuncs.acceptChallenge(supabase, challenges, challengeId);
+      await loadChallenges();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleDeclineChallenge = async (challengeId) => {
+    try {
+      const challenge = challenges.find(c => c.id === challengeId);
+      const result = await challengeFuncs.declineChallenge(supabase, players, challengeId, challenge);
+      
+      if (result.rankSwapped) {
+        alert('You declined! The challenger has taken your spot.');
+        await loadPlayers();
+      }
+      await loadChallenges();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleRecordChallengeResult = async (challengeId, winnerId) => {
+    try {
+      const challenge = challenges.find(c => c.id === challengeId);
+      const loserId = winnerId === challenge.challenger_id 
+        ? challenge.challenged_id 
+        : challenge.challenger_id;
+
+      await recordChallengeMatch(winnerId, loserId);
+      
+      await challengeFuncs.recordChallengeResult(supabase, challengeId, winnerId);
+      await loadChallenges();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const getEligibleOpponents = (playerId) => {
+    return challengeFuncs.getEligibleOpponents(players, challenges, playerId);
+  };
+```
+
 
   const loadTournaments = async () => {
     try {
@@ -605,7 +735,62 @@ function App() {
           </div>
           <p style={{ color: "#9ca3af" }}>8-Ball • 9-Ball • 10-Ball</p>
         </div>
-
+<div
+  style={{
+    display: "flex",
+    gap: "10px",
+    marginBottom: "30px",
+    background: "#1f2937",
+    borderRadius: "10px",
+    padding: "5px",
+  }}
+>
+  <button
+    onClick={() => setActiveTab("rankings")}
+    style={{
+      flex: 1,
+      padding: "15px",
+      borderRadius: "8px",
+      border: "none",
+      background: activeTab === "rankings" ? "#10b981" : "transparent",
+      color: "white",
+      cursor: "pointer",
+      fontWeight: "bold",
+    }}
+  >
+    Rankings
+  </button>
+  <button
+    onClick={() => setActiveTab("challenges")}
+    style={{
+      flex: 1,
+      padding: "15px",
+      borderRadius: "8px",
+      border: "none",
+      background: activeTab === "challenges" ? "#10b981" : "transparent",
+      color: "white",
+      cursor: "pointer",
+      fontWeight: "bold",
+    }}
+  >
+    Challenges
+  </button>
+  <button
+    onClick={() => setActiveTab("tournaments")}
+    style={{
+      flex: 1,
+      padding: "15px",
+      borderRadius: "8px",
+      border: "none",
+      background: activeTab === "tournaments" ? "#10b981" : "transparent",
+      color: "white",
+      cursor: "pointer",
+      fontWeight: "bold",
+    }}
+  >
+    Tournaments
+  </button>
+</div>
         <div
           style={{
             display: "flex",
@@ -632,20 +817,19 @@ function App() {
             Rankings
           </button>
           <button
-            onClick={() => setActiveTab("tournaments")}
+            onClick={() => setActiveTab("challenges")}
             style={{
               flex: 1,
               padding: "15px",
               borderRadius: "8px",
               border: "none",
-              background:
-                activeTab === "tournaments" ? "#10b981" : "transparent",
+              background: activeTab === "challenges" ? "#10b981" : "transparent",
               color: "white",
               cursor: "pointer",
               fontWeight: "bold",
             }}
           >
-            Tournaments
+            Challenges
           </button>
         </div>
 
