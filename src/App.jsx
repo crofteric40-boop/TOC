@@ -7,9 +7,12 @@ import * as challengeFuncs from './challengeFunctions';
 function App() {
   const [players, setPlayers] = useState([]);
   const [tournaments, setTournaments] = useState([]);
+  const [challenges, setChallenges] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showCreateTournament, setShowCreateTournament] = useState(false);
+  const [showRecordChallenge, setShowRecordChallenge] = useState(false);
+  const [showCreateChallenge, setShowCreateChallenge] = useState(false);
   const [activeTab, setActiveTab] = useState("rankings");
   const [name, setName] = useState("");
   const [rating, setRating] = useState(500);
@@ -20,6 +23,32 @@ function App() {
   useEffect(() => {
     loadPlayers();
     loadTournaments();
+    loadChallenges();
+    expireOldChallenges();
+  }, []);
+
+  const expireOldChallenges = async () => {
+    try {
+      await supabase.rpc('expire_old_challenges');
+    } catch (error) {
+      // Function might not exist, that's okay
+      console.log('Auto-expire function not available');
+    }
+  };
+
+  const loadChallenges = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('challenges')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setChallenges(data || []);
+    } catch (error) {
+      console.error('Error loading challenges:', error);
+    }
+  };
   }, []);
 
   const loadPlayers = async () => {
@@ -36,97 +65,132 @@ function App() {
       alert('Error loading players: ' + error.message);
     } finally {
       setLoading(false);
-    };
-const recordChallengeMatch = async (winnerId, loserId) => {
-  try {
-    const winner = players.find(p => p.id === winnerId);
-    const loser = players.find(p => p.id === loserId);
-    
-    if (!winner || !loser) return;
-
-    const K = 20;
-    const ratingDiff = winner.rating - loser.rating;
-    const expectedWinner = 1 / (1 + Math.pow(10, -ratingDiff / 400));
-    const expectedLoser = 1 - expectedWinner;
-    const actualWinner = 1;
-    const actualLoser = 0;
-    const winnerRatingChange = K * (actualWinner - expectedWinner);
-    const loserRatingChange = K * (actualLoser - expectedLoser);
-    const newWinnerRating = Math.max(200, Math.round(winner.rating + winnerRatingChange));
-    const newLoserRating = Math.max(200, Math.round(loser.rating + loserRatingChange));
-    const winnerNewWins = winner.wins + 1;
-    const loserNewLosses = loser.losses + 1;
-    const winnerCurrentRank = players.findIndex(p => p.id === winnerId);
-    const loserCurrentRank = players.findIndex(p => p.id === loserId);
-    const lowerRankedWon = winnerCurrentRank > loserCurrentRank;
-
-    await supabase.from('players').update({ rating: newWinnerRating, wins: winnerNewWins }).eq('id', winnerId);
-    await supabase.from('players').update({ rating: newLoserRating, losses: loserNewLosses }).eq('id', loserId);
-
-    if (lowerRankedWon) {
-      await loadPlayers();
-    } else {
-      const updated = players.map(p => {
-        if (p.id === winnerId) return { ...p, rating: newWinnerRating, wins: winnerNewWins };
-        if (p.id === loserId) return { ...p, rating: newLoserRating, losses: loserNewLosses };
-        return p;
-      });
-      setPlayers(updated);
     }
-  } catch (error) {
-    console.error('Error recording challenge match:', error);
-    alert('Error recording challenge match: ' + error.message);
-  }
-};
+  };
 
-const handleCreateChallenge = async (challengerId, challengedId, message) => {
-  try {
-    await challengeFuncs.createChallenge(supabase, challenges, challengerId, challengedId, message);
-    await loadChallenges();
-  } catch (error) {
-    alert(error.message);
-  }
-};
+  const recordChallengeMatch = async (winnerId, loserId) => {
+    try {
+      const winner = players.find(p => p.id === winnerId);
+      const loser = players.find(p => p.id === loserId);
+      
+      if (!winner || !loser) return;
 
-const handleAcceptChallenge = async (challengeId) => {
-  try {
-    await challengeFuncs.acceptChallenge(supabase, challenges, challengeId);
-    await loadChallenges();
-  } catch (error) {
-    alert(error.message);
-  }
-};
+      // Calculate Fargo-style rating changes
+      const K = 20; // K-factor
+      const ratingDiff = winner.rating - loser.rating;
+      
+      // Expected score calculation (logistic function)
+      const expectedWinner = 1 / (1 + Math.pow(10, -ratingDiff / 400));
+      const expectedLoser = 1 - expectedWinner;
+      
+      // Actual scores (winner gets 1, loser gets 0)
+      const actualWinner = 1;
+      const actualLoser = 0;
+      
+      // Rating changes
+      const winnerRatingChange = K * (actualWinner - expectedWinner);
+      const loserRatingChange = K * (actualLoser - expectedLoser);
+      
+      // New ratings (minimum 200)
+      const newWinnerRating = Math.max(200, Math.round(winner.rating + winnerRatingChange));
+      const newLoserRating = Math.max(200, Math.round(loser.rating + loserRatingChange));
+      
+      // Update wins/losses
+      const winnerNewWins = winner.wins + 1;
+      const loserNewLosses = loser.losses + 1;
 
-const handleDeclineChallenge = async (challengeId) => {
-  try {
-    const challenge = challenges.find(c => c.id === challengeId);
-    const result = await challengeFuncs.declineChallenge(supabase, players, challengeId, challenge);
-    if (result.rankSwapped) {
-      alert('You declined! The challenger has taken your spot.');
-      await loadPlayers();
+      // Determine if rankings should swap
+      const winnerCurrentRank = players.findIndex(p => p.id === winnerId);
+      const loserCurrentRank = players.findIndex(p => p.id === loserId);
+      const lowerRankedWon = winnerCurrentRank > loserCurrentRank;
+
+      // Update both players in database
+      await supabase
+        .from('players')
+        .update({ 
+          rating: newWinnerRating,
+          wins: winnerNewWins
+        })
+        .eq('id', winnerId);
+
+      await supabase
+        .from('players')
+        .update({ 
+          rating: newLoserRating,
+          losses: loserNewLosses
+        })
+        .eq('id', loserId);
+
+      // If lower-ranked player won, we need to reorder
+      if (lowerRankedWon) {
+        // Reload players to get fresh data with new ratings
+        await loadPlayers();
+      } else {
+        // Just update local state
+        const updated = players.map(p => {
+          if (p.id === winnerId) return { ...p, rating: newWinnerRating, wins: winnerNewWins };
+          if (p.id === loserId) return { ...p, rating: newLoserRating, losses: loserNewLosses };
+          return p;
+        });
+        setPlayers(updated);
+      }
+
+      setShowRecordChallenge(false);
+      
+    } catch (error) {
+      console.error('Error recording challenge match:', error);
+      alert('Error recording challenge match: ' + error.message);
     }
-    await loadChallenges();
-  } catch (error) {
-    alert(error.message);
-  }
-};
+  };
 
-const handleRecordChallengeResult = async (challengeId, winnerId) => {
-  try {
-    const challenge = challenges.find(c => c.id === challengeId);
-    const loserId = winnerId === challenge.challenger_id ? challenge.challenged_id : challenge.challenger_id;
-    await recordChallengeMatch(winnerId, loserId);
-    await challengeFuncs.recordChallengeResult(supabase, challengeId, winnerId);
-    await loadChallenges();
-  } catch (error) {
-    alert(error.message);
-  }
-};
+  const handleCreateChallenge = async (challengerId, challengedId, message) => {
+    try {
+      await challengeFuncs.createChallenge(supabase, challenges, challengerId, challengedId, message);
+      await loadChallenges();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
 
-const getEligibleOpponents = (playerId) => {
-  return challengeFuncs.getEligibleOpponents(players, challenges, playerId);
-};
-    
+  const handleAcceptChallenge = async (challengeId) => {
+    try {
+      await challengeFuncs.acceptChallenge(supabase, challenges, challengeId);
+      await loadChallenges();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleDeclineChallenge = async (challengeId) => {
+    try {
+      const challenge = challenges.find(c => c.id === challengeId);
+      const result = await challengeFuncs.declineChallenge(supabase, players, challengeId, challenge);
+      if (result.rankSwapped) {
+        alert('You declined! The challenger has taken your spot.');
+        await loadPlayers();
+      }
+      await loadChallenges();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleRecordChallengeResult = async (challengeId, winnerId) => {
+    try {
+      const challenge = challenges.find(c => c.id === challengeId);
+      const loserId = winnerId === challenge.challenger_id ? challenge.challenged_id : challenge.challenger_id;
+      await recordChallengeMatch(winnerId, loserId);
+      await challengeFuncs.recordChallengeResult(supabase, challengeId, winnerId);
+      await loadChallenges();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const getEligibleOpponents = (playerId) => {
+    return challengeFuncs.getEligibleOpponents(players, challenges, playerId);
+  };
+
   const loadTournaments = async () => {
     try {
       const { data: tournamentsData, error: tournamentsError } = await supabase
@@ -694,95 +758,7 @@ const getEligibleOpponents = (playerId) => {
           </div>
           <p style={{ color: "#9ca3af" }}>8-Ball • 9-Ball • 10-Ball</p>
         </div>
-        {/* Player Selection */}
-        {players.length > 0 && (
-          <div style={{ 
-            marginBottom: '20px', 
-            background: '#1f2937', 
-            padding: '15px', 
-            borderRadius: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px'
-          }}>
-            <label style={{ color: '#9ca3af' }}>Playing as:</label>
-            <select
-              value={currentUserId || ''}
-              onChange={(e) => setCurrentUserId(e.target.value)}
-              style={{
-                background: '#374151',
-                border: 'none',
-                borderRadius: '5px',
-                padding: '8px 12px',
-                color: 'white',
-                fontSize: '14px',
-              }}
-            >
-              <option value="">Select your player...</option>
-              {sorted.map((p, i) => (
-                <option key={p.id} value={p.id}>
-                  #{i + 1} {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-<div
-  style={{
-    display: "flex",
-    gap: "10px",
-    marginBottom: "30px",
-    background: "#1f2937",
-    borderRadius: "10px",
-    padding: "5px",
-  }}
->
-  <button
-    onClick={() => setActiveTab("rankings")}
-    style={{
-      flex: 1,
-      padding: "15px",
-      borderRadius: "8px",
-      border: "none",
-      background: activeTab === "rankings" ? "#10b981" : "transparent",
-      color: "white",
-      cursor: "pointer",
-      fontWeight: "bold",
-    }}
-  >
-    Rankings
-  </button>
-  <button
-    onClick={() => setActiveTab("challenges")}
-    style={{
-      flex: 1,
-      padding: "15px",
-      borderRadius: "8px",
-      border: "none",
-      background: activeTab === "challenges" ? "#10b981" : "transparent",
-      color: "white",
-      cursor: "pointer",
-      fontWeight: "bold",
-    }}
-  >
-    Challenges
-  </button>
-  <button
-    onClick={() => setActiveTab("tournaments")}
-    style={{
-      flex: 1,
-      padding: "15px",
-      borderRadius: "8px",
-      border: "none",
-      background: activeTab === "tournaments" ? "#10b981" : "transparent",
-      color: "white",
-      cursor: "pointer",
-      fontWeight: "bold",
-    }}
-  >
-    Tournaments
-  </button>
-</div>
+
         <div
           style={{
             display: "flex",
@@ -822,6 +798,22 @@ const getEligibleOpponents = (playerId) => {
             }}
           >
             Challenges
+          </button>
+          <button
+            onClick={() => setActiveTab("tournaments")}
+            style={{
+              flex: 1,
+              padding: "15px",
+              borderRadius: "8px",
+              border: "none",
+              background:
+                activeTab === "tournaments" ? "#10b981" : "transparent",
+              color: "white",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            Tournaments
           </button>
         </div>
 
@@ -944,24 +936,109 @@ const getEligibleOpponents = (playerId) => {
             )}
           </div>
         )}
-{activeTab === "challenges" && (
-          currentUserId ? (
-            <ChallengeBoard
-              players={sorted}
-              challenges={challenges}
-              currentPlayerId={currentUserId}
-              onCreateChallenge={handleCreateChallenge}
-              onAcceptChallenge={handleAcceptChallenge}
-              onDeclineChallenge={handleDeclineChallenge}
-              onRecordResult={handleRecordChallengeResult}
-              getEligibleOpponents={getEligibleOpponents}
-            />
-          ) : (
-            <div style={{ background: '#1f2937', borderRadius: '10px', padding: '60px', textAlign: 'center', color: '#9ca3af' }}>
-              <p style={{ fontSize: '18px', marginBottom: '10px' }}>Please select your player above to access the Challenge Board</p>
+
+        {activeTab === "challenges" && (
+          <div
+            style={{
+              background: "#1f2937",
+              borderRadius: "10px",
+              padding: "30px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: "20px",
+              }}
+            >
+              <h2 style={{ fontSize: "24px", fontWeight: "bold" }}>
+                Challenge Matches
+              </h2>
+              <button
+                onClick={() => setShowRecordChallenge(true)}
+                style={{
+                  background: "#10b981",
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  border: "none",
+                  color: "white",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}
+              >
+                <Plus size={20} />
+                Record Challenge
+              </button>
             </div>
-          )
+
+            <div style={{ marginBottom: "30px" }}>
+              <h3 style={{ fontSize: "18px", marginBottom: "15px", color: "#9ca3af" }}>
+                How Challenge Matches Work
+              </h3>
+              <ul style={{ color: "#9ca3af", lineHeight: "1.8" }}>
+                <li>Lower-ranked player beats higher-ranked player → Lower player takes higher player's rank position</li>
+                <li>Higher-ranked player wins → No rank change</li>
+                <li>Ratings are adjusted using Fargo-style calculations (K-factor: 20)</li>
+                <li>Minimum rating: 200</li>
+              </ul>
+            </div>
+
+            <h3 style={{ fontSize: "18px", marginBottom: "15px" }}>
+              Current Rankings
+            </h3>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #374151" }}>
+                  <th style={{ textAlign: "left", padding: "10px" }}>Rank</th>
+                  <th style={{ textAlign: "left", padding: "10px" }}>Player</th>
+                  <th style={{ textAlign: "center", padding: "10px" }}>Rating</th>
+                  <th style={{ textAlign: "center", padding: "10px" }}>Record</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((p, i) => (
+                  <tr key={p.id} style={{ borderBottom: "1px solid #374151" }}>
+                    <td style={{ padding: "15px" }}>#{i + 1}</td>
+                    <td style={{ padding: "15px", fontWeight: "bold" }}>
+                      {p.name}
+                    </td>
+                    <td style={{ textAlign: "center", padding: "15px" }}>
+                      <span
+                        style={{
+                          background: "#10b981",
+                          padding: "5px 15px",
+                          borderRadius: "20px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {p.rating}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "center", padding: "15px" }}>
+                      {p.wins}W - {p.losses}L
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {players.length === 0 && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "40px",
+                  color: "#9ca3af",
+                }}
+              >
+                No players yet. Add players first to record challenge matches!
+              </div>
+            )}
+          </div>
         )}
+
         {activeTab === "tournaments" && (
           <div>
             <div
@@ -1139,6 +1216,14 @@ const getEligibleOpponents = (playerId) => {
           <PlayerImportModal
             onImport={importPlayers}
             onCancel={() => setShowImport(false)}
+          />
+        )}
+
+        {showRecordChallenge && (
+          <RecordChallengeModal
+            players={sorted}
+            onRecord={recordChallengeMatch}
+            onCancel={() => setShowRecordChallenge(false)}
           />
         )}
 
@@ -1970,6 +2055,171 @@ function TournamentForm({ onCreate, onCancel }) {
         >
           Cancel
         </button>
+      </div>
+    </div>
+  );
+}
+
+function RecordChallengeModal({ players, onRecord, onCancel }) {
+  const [winnerId, setWinnerId] = useState("");
+  const [loserId, setLoserId] = useState("");
+
+  const handleRecord = () => {
+    if (!winnerId || !loserId) {
+      alert("Please select both winner and loser");
+      return;
+    }
+    if (winnerId === loserId) {
+      alert("Winner and loser cannot be the same player");
+      return;
+    }
+    onRecord(winnerId, loserId);
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0,0,0,0.8)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          background: "#1f2937",
+          borderRadius: "10px",
+          padding: "30px",
+          width: "500px",
+        }}
+      >
+        <h3
+          style={{
+            fontSize: "20px",
+            fontWeight: "bold",
+            marginBottom: "20px",
+          }}
+        >
+          Record Challenge Match
+        </h3>
+
+        <div style={{ marginBottom: "15px" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: "5px",
+              fontSize: "14px",
+            }}
+          >
+            Winner
+          </label>
+          <select
+            value={winnerId}
+            onChange={(e) => setWinnerId(e.target.value)}
+            style={{
+              width: "100%",
+              background: "#374151",
+              border: "none",
+              borderRadius: "5px",
+              padding: "10px",
+              color: "white",
+              fontSize: "16px",
+            }}
+          >
+            <option value="">Select winner...</option>
+            {players.map((p, i) => (
+              <option key={p.id} value={p.id}>
+                #{i + 1} {p.name} ({p.rating})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: "20px" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: "5px",
+              fontSize: "14px",
+            }}
+          >
+            Loser
+          </label>
+          <select
+            value={loserId}
+            onChange={(e) => setLoserId(e.target.value)}
+            style={{
+              width: "100%",
+              background: "#374151",
+              border: "none",
+              borderRadius: "5px",
+              padding: "10px",
+              color: "white",
+              fontSize: "16px",
+            }}
+          >
+            <option value="">Select loser...</option>
+            {players.map((p, i) => (
+              <option key={p.id} value={p.id}>
+                #{i + 1} {p.name} ({p.rating})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div
+          style={{
+            background: "#374151",
+            padding: "15px",
+            borderRadius: "5px",
+            marginBottom: "20px",
+          }}
+        >
+          <p style={{ fontSize: "14px", color: "#9ca3af", marginBottom: "10px" }}>
+            Rating changes will be calculated using Fargo-style formula (K=20)
+          </p>
+          <p style={{ fontSize: "14px", color: "#9ca3af" }}>
+            If a lower-ranked player wins, they will take the higher player's rank position.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            onClick={handleRecord}
+            style={{
+              flex: 1,
+              background: "#10b981",
+              padding: "10px",
+              borderRadius: "5px",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            Record Match
+          </button>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              background: "#4b5563",
+              padding: "10px",
+              borderRadius: "5px",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );
