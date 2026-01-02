@@ -49,7 +49,6 @@ function App() {
       console.error('Error loading challenges:', error);
     }
   };
-  }, []);
 
   const loadPlayers = async () => {
     try {
